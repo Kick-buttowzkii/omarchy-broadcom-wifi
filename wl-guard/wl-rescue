@@ -1,0 +1,9 @@
+#!/bin/bash
+# Reinstall the last known-good kernel + headers + Broadcom wl driver, offline.
+set -e
+KIT=/var/lib/wl-guard/last-good
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+echo "Restoring from $KIT:"; ls -1 "$KIT"
+pacman -U --noconfirm "$KIT"/*.pkg.tar.zst
+dkms autoinstall
+echo "Done. Reboot to use the restored kernel: sudo reboot"

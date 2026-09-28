@@ -1,0 +1,43 @@
+#!/bin/bash
+# Verify the Broadcom wl DKMS module exists for every installed kernel.
+# On success, refresh the offline rescue kit with the current known-good packages.
+KIT=/var/lib/wl-guard/last-good
+CACHE=/var/cache/pacman/pkg
+PKGS=(linux-omarchy linux-omarchy-headers broadcom-wl-dkms dkms pahole xxhash)
+failed=()
+mkdir -p /var/lib/wl-guard
+
+for dir in /usr/lib/modules/*/; do
+  kver=$(basename "$dir")
+  [[ -f $dir/vmlinuz ]] || continue
+  if ! modinfo -k "$kver" wl &>/dev/null; then
+    echo "wl-guard: wl missing for $kver, retrying DKMS build..."
+    dkms autoinstall -k "$kver" >/dev/null 2>&1
+    modinfo -k "$kver" wl &>/dev/null || failed+=("$kver")
+  fi
+done
+
+if ((${#failed[@]})); then
+  msg="Broadcom Wi-Fi driver (wl) FAILED to build for: ${failed[*]}. Do NOT reboot yet. Run: sudo wl-rescue"
+  printf '\n\e[1;31m!!! %s\e[0m\n\n' "$msg"
+  echo "$(date -Is) $msg" >> /var/lib/wl-guard/failures.log
+  for uid in $(loginctl list-users --no-legend | awk '{print $1}'); do
+    user=$(id -nu "$uid" 2>/dev/null) || continue
+    [[ -S /run/user/$uid/bus ]] && sudo -u "$user" DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus \
+      notify-send -u critical "Wi-Fi driver broken" "$msg" 2>/dev/null
+  done
+  exit 0
+fi
+
+# All kernels have wl: keep a copy of the installed package files as the new known-good set.
+mkdir -p "$KIT"
+for p in "${PKGS[@]}"; do
+  v=$(pacman -Q "$p" 2>/dev/null | awk '{print $2}')
+  [[ -n $v ]] || continue
+  f=$(ls "$CACHE"/"$p"-"${v#*:}"-*.pkg.tar.zst "$CACHE"/"$p"-"$v"-*.pkg.tar.zst 2>/dev/null | head -1)
+  [[ -n $f ]] || continue
+  name=$(basename "$f")
+  find "$KIT" -maxdepth 1 -name "$p-[0-9]*.pkg.tar.zst" ! -name "$name" -delete
+  cp -u "$f" "$KIT/"
+done
+echo "wl-guard: wl OK for all kernels."

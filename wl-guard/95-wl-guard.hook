@@ -1,0 +1,12 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = linux-omarchy*
+Target = broadcom-wl-dkms
+Target = dkms
+
+[Action]
+Description = Checking the Broadcom wl Wi-Fi driver is built for every kernel...
+When = PostTransaction
+Exec = /usr/local/bin/wl-guard
